@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Little Paws · Pet Kitchen</title>
+<style>
+  :root { --ink:#3b2a1a; --panel:rgba(255,250,242,.8); --line:rgba(60,40,20,.14); --accent:#e9781a; }
+  html,body { margin:0; height:100%; background:#f4ebdf; color:var(--ink);
+    font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; overflow:hidden; }
+  canvas { display:block; touch-action:none; }
+  body.knife canvas { cursor:crosshair; }
+  .panel { position:fixed; left:16px; bottom:16px; right:16px; max-width:360px; box-sizing:border-box;
+    background:var(--panel); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--line); border-radius:16px; padding:14px;
+    box-shadow:0 8px 30px rgba(80,50,20,.12); }
+  .head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:2px; }
+  h1 { font-size:15px; margin:0; }
+  .hint { margin:0 0 12px; font-size:12px; opacity:.7; min-height:3em; }
+  .seg { display:flex; background:rgba(60,40,20,.08); border-radius:10px; padding:2px; }
+  .seg button { border:0; background:transparent; color:inherit; font:inherit; font-size:12px; padding:4px 12px; border-radius:8px; cursor:pointer; }
+  .seg button[aria-pressed="true"] { background:#fff; box-shadow:0 1px 3px rgba(60,40,20,.18); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .chip { display:flex; align-items:center; gap:6px; border:1px solid var(--line); background:rgba(255,255,255,.5);
+    border-radius:999px; padding:5px 10px; cursor:pointer; font:inherit; font-size:12px; color:inherit; }
+  .chip[aria-pressed="true"] { background:#fff; border-color:var(--ink); }
+  .dot { width:12px; height:12px; border-radius:50%; box-shadow:inset 0 0 0 2px rgba(255,255,255,.6); }
+  .row { display:flex; align-items:center; gap:10px; }
+  label { font-size:12px; white-space:nowrap; }
+  input[type=range] { flex:1; min-width:0; accent-color:var(--accent); }
+  .go { border:0; background:var(--ink); color:#fff; border-radius:10px; padding:7px 12px; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap; }
+  #err { position:fixed; inset:0; display:none; place-items:center; text-align:center; padding:24px; }
+.chip.active,.seg button.active{background:#fff;border-color:#3b2a1a;box-shadow:0 1px 3px #3c28142e}#status{font-size:12px;opacity:.8;min-height:2.8em}#state{font-size:12px;opacity:.7}.panel{max-width:390px}@media(max-width:600px){.panel{left:8px;right:8px;bottom:8px;padding:10px;max-width:350px}.hint{margin-bottom:7px}.chips{gap:4px;margin-bottom:5px}.chip{padding:4px 8px}.go{padding:6px 9px}}</style>
+</head>
+<body>
+<div class="panel">
+<div class="head"><h1>Little Paws</h1><div class="seg" role="group" aria-label="Tool"><button id="pet" class="active" aria-pressed="true">Pet</button><button id="carry" aria-pressed="false">Carry</button></div></div>
+<p class="hint" id="help">Pet: click head to pat, move across head to stroke · Carry: drag to bed or water</p>
+<div class="chips" id="chips"><button class="chip" data-pet="puppy" aria-pressed="true"><span class="dot" style="background:#ce995b"></span>Puppy</button><button class="chip" data-pet="kitty" aria-pressed="false"><span class="dot" style="background:#7c94ae"></span>Kitty</button><button class="chip" data-pet="chick" aria-pressed="false"><span class="dot" style="background:#ffd72b"></span>Chick</button><button class="chip" data-pet="bear" aria-pressed="false"><span class="dot" style="background:#99643b"></span>Bear cub</button><button class="chip" data-pet="rabbit" aria-pressed="false"><span class="dot" style="background:#f2e4da"></span>Baby rabbit</button><button class="chip" data-pet="hamster" aria-pressed="false"><span class="dot" style="background:#e2a26c"></span>Baby hamster</button></div><p id="status" role="status" aria-live="polite"></p><div class="row"><strong id="petname">Biscuit</strong><span id="state">Feeling cozy</span></div><div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="go" id="home">Play again</button></div><div class="row" style="margin-top:10px"><label>Water <span id="waterLabel">100%</span></label><div style="flex:1;height:5px;background:#c9dddd;border-radius:6px;overflow:hidden"><div id="waterbar" style="height:100%;background:#398a91;width:100%"></div></div><button class="go" id="refill">Refill</button><button class="go" id="view">View</button></div></div><div id="err">WebGL isn't available in this browser.</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+
+// Original uploaded kitchen / renderer / lighting retained above.
+const T=THREE,$=id=>document.getElementById(id);
+// ---------- renderer / scene ----------
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias:true }); }
+catch (e) { document.getElementById('err').style.display = 'grid'; throw e; }
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.94;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#dfe3da');
+scene.fog = null;
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 50);
+camera.position.set(0, 3.6, 5.6);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 0.25, 0);
+controls.enableDamping = true;
+controls.minDistance = 2.5; controls.maxDistance = 12;
+controls.maxPolarAngle = Math.PI * 0.47;
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+
+scene.add(new THREE.HemisphereLight('#fff6ea', '#d9c3a5', 0.7));
+const sun = new THREE.DirectionalLight('#fff3e2', 2.0);
+sun.position.set(-4, 8, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-7, right:7, top:6, bottom:-6, near:1, far:25 });
+sun.shadow.radius = 6;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// ---------- kitchen: cutting board on a marble counter, tiled backsplash, a few props ----------
+const BOARD_W = 6, BOARD_D = 4.2, BOARD_T = 0.14, COUNTER_Y = -BOARD_T, WALL_Z = -4.4;
+function canvasTex(w, h, paint, { srgb = true, repeat = [1, 1] } = {}) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  paint(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.anisotropy = 8;
+  return t;
+}
+let kseed = 3; const krnd = () => (kseed = (kseed * 16807) % 2147483647) / 2147483647;
+
+const woodTex = canvasTex(1024, 1024, (g, w, h) => {
+  g.fillStyle = '#c99660'; g.fillRect(0, 0, w, h);
+  // butcher-block strips with their own tone, then wavy grain
+  for (let s = 0; s < 8; s++) { g.fillStyle = `hsla(${26 + krnd() * 8},${45 + krnd() * 15}%,${46 + krnd() * 12}%,0.55)`; g.fillRect(0, s * h / 8, w, h / 8); }
+  for (let i = 0; i < 260; i++) {
+    const y0 = krnd() * h, amp = 2 + krnd() * 6, f = 0.004 + krnd() * 0.01, ph = krnd() * 6;
+    g.strokeStyle = `rgba(${90 + krnd() * 40},${50 + krnd() * 25},${20},${0.08 + krnd() * 0.15})`;
+    g.lineWidth = 0.6 + krnd() * 1.8; g.beginPath();
+    for (let x = 0; x <= w; x += 8) g.lineTo(x, y0 + Math.sin(x * f + ph) * amp);
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(70,40,15,0.35)';
+  for (let s = 1; s < 8; s++) g.fillRect(0, s * h / 8 - 1, w, 2);
+});
+const marbleTex = canvasTex(1024, 1024, (g, w, h) => {
+  g.fillStyle = '#ece8e2'; g.fillRect(0, 0, w, h);
+  g.filter = 'blur(1.5px)';
+  for (let v = 0; v < 14; v++) {
+    let x = krnd() * w, y = krnd() * h, a = krnd() * Math.PI * 2;
+    g.strokeStyle = `rgba(120,118,122,${0.12 + krnd() * 0.25})`; g.lineWidth = 0.6 + krnd() * 2.5;
+    g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 120; k++) { a += (krnd() - 0.5) * 0.5; x += Math.cos(a) * 9; y += Math.sin(a) * 9; g.lineTo(x, y); }
+    g.stroke();
+  }
+  g.filter = 'none';
+}, { repeat: [2, 2] });
+const tileTex = canvasTex(1024, 1024, (g, w, h) => {
+  g.fillStyle = '#c9cfc6'; g.fillRect(0, 0, w, h);
+  const tw = 128, th = 64;
+  for (let r = 0; r < h / th; r++) for (let c = -1; c < w / tw + 1; c++) {
+    const x = c * tw + (r % 2 ? tw / 2 : 0), y = r * th, l = 86 + krnd() * 5;
+    const grad = g.createLinearGradient(x, y, x, y + th);
+    grad.addColorStop(0, `hsl(110,14%,${l + 3}%)`); grad.addColorStop(1, `hsl(110,14%,${l - 3}%)`);
+    g.fillStyle = grad; g.beginPath(); g.roundRect(x + 3, y + 3, tw - 6, th - 6, 6); g.fill();
+  }
+}, { repeat: [5, 2.5] });
+const dimpleTex = canvasTex(256, 256, (g, w, h) => {
+  g.fillStyle = '#888'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 1400; i++) { g.fillStyle = `rgba(${krnd() < 0.5 ? '0,0,0' : '255,255,255'},0.18)`; g.beginPath(); g.arc(krnd() * w, krnd() * h, 1 + krnd() * 2.5, 0, 7); g.fill(); }
+}, { srgb: false, repeat: [3, 2] });
+
+function buildKitchen() {
+  const k = new THREE.Group();
+  const shadowy = o => { o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } }); return o; };
+
+  // counter + backsplash
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(22, 0.6, 9), new THREE.MeshPhysicalMaterial({ map: marbleTex, roughness: 0.25, clearcoat: 0.6, clearcoatRoughness: 0.2 }));
+  counter.position.set(0, COUNTER_Y - 0.3, WALL_Z + 4.5); counter.receiveShadow = true;
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(22, 8), new THREE.MeshPhysicalMaterial({ map: tileTex, roughness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.15 }));
+  wall.position.set(0, COUNTER_Y + 4, WALL_Z); wall.receiveShadow = true;
+  k.add(counter, wall);
+
+  // Thick round padded playmat in the original board's honey-tan palette.
+  const matTexture=canvasTex(512,512,(g,w,h)=>{g.fillStyle='#c99660';g.fillRect(0,0,w,h);for(let y=0;y<h;y+=4){g.strokeStyle=y%8?'#d4a571':'#bc8754';g.lineWidth=.5;g.beginPath();g.moveTo(0,y);g.lineTo(w,y);g.stroke()}for(let x=0;x<w;x+=4){g.strokeStyle='rgba(255,235,199,.18)';g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke()}},{repeat:[3,3]});
+  const padMat=new THREE.MeshStandardMaterial({color:'#e4b780',map:matTexture,roughness:.95,bumpMap:matTexture,bumpScale:.009});
+  const pad=new THREE.Mesh(new THREE.CylinderGeometry(2.78,2.78,.28,120),padMat);pad.position.set(0,0,.1);k.add(shadowy(pad));
+  for(const y of [-.09,.095]){const piping=new THREE.Mesh(new THREE.TorusGeometry(2.775,.035,10,120),new THREE.MeshStandardMaterial({color:'#bb8553',roughness:.95}));piping.rotation.x=Math.PI/2;piping.position.set(0,y,.1);k.add(shadowy(piping))}
+  // Sewn concentric quilting with tiny stitch dashes, all sitting above the padding.
+  for(const r of [1.1,1.9,2.55]){const count=Math.round(r*125);for(let i=0;i<count;i++){const a=i/count*Math.PI*2;const stitch=new THREE.Mesh(new THREE.SphereGeometry(1,5,4),new THREE.MeshStandardMaterial({color:'#e9c99f',roughness:1}));stitch.position.set(Math.cos(a)*r,.143,.1+Math.sin(a)*r);stitch.scale.set(.017,.003,.004);stitch.rotation.y=-a-Math.PI/2;k.add(stitch)}}
+
+  // folded tea towel, front right
+  const towelTex = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#f7f1e8'; g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(214,80,50,0.35)';
+    for (let i = 0; i < 4; i++) { g.fillRect(i * 128, 0, 64, h); g.fillRect(0, i * 128, w, 64); }
+  }, { repeat: [2, 1.4] });
+  const towel = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 1.4), new THREE.MeshStandardMaterial({ map: towelTex, roughness: 0.95 }));
+  towel.position.set(4.6, COUNTER_Y + 0.03, 1.4); towel.rotation.y = -0.35;
+  k.add(shadowy(towel));
+  return k;
+}
+scene.add(buildKitchen());
+
+
+let seed=439;function rand(){seed=(seed*16807)%2147483647;return(seed-1)/2147483646}
+function material(color,rough=.8){return new T.MeshStandardMaterial({color,roughness:rough})}const white=material('#fffaf0'),pink=material('#edacac'),dark=new T.MeshPhysicalMaterial({color:'#201d24',roughness:.13,clearcoat:1});
+function ball(parent,x,y,z,sx,sy,sz,mat){let o=new T.Mesh(new T.SphereGeometry(1,32,24),typeof mat==='string'?material(mat):mat);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.castShadow=o.receiveShadow=true;parent.add(o);return o}function box(parent,x,y,z,w,h,d,mat){let o=new T.Mesh(new T.BoxGeometry(w,h,d),typeof mat==='string'?material(mat):mat);o.position.set(x,y,z);o.castShadow=o.receiveShadow=true;parent.add(o);return o}function tube(parent,pts,r,mat){let curve=new T.CatmullRomCurve3(pts.map(p=>new T.Vector3(...p)));let m=new T.Mesh(new T.TubeGeometry(curve,28,r,8,false),typeof mat==='string'?material(mat):mat);parent.add(m);m.castShadow=true;return m}
+function fabricTexture(){const cn=document.createElement('canvas');cn.width=cn.height=256;let g=cn.getContext('2d');g.fillStyle='#a0a0a0';g.fillRect(0,0,256,256);for(let i=0;i<23000;i++){let x=rand()*256,y=rand()*256;g.strokeStyle=rand()>.5?'#c4c4c4':'#777777';g.lineWidth=.5;g.beginPath();g.moveTo(x,y);g.lineTo(x+rand()*3,y+rand()*5);g.stroke()}let t=new T.CanvasTexture(cn);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(4,4);return t}const fuzz=fabricTexture();function plush(color){return new T.MeshStandardMaterial({color,roughness:.8,bumpMap:fuzz,bumpScale:.018,envMapIntensity:.35})}
+// Cozy bed, thick padded bolster, pillow and a blanket made of real folds + thousands of curls.
+const bed=new T.Group();bed.position.set(2.2,0,-3.6);scene.add(bed);ball(bed,0,.22,0,1.55,.29,1.32,plush('#559e72'));ball(bed,0,.36,.12,1.25,.2,1.06,plush('#efe5d6'));for(let i=0;i<50;i++){let a=i/49*Math.PI*2;ball(bed,Math.cos(a)*1.34,.54,Math.sin(a)*1.12,.25,.33,.25,plush('#429464'))}let pillow=ball(bed,0,.63,-.53,.78,.23,.43,plush('#fff2df'));pillow.rotation.y=-.12;for(let x of [-.55,.55])ball(bed,x,.75,-.52,.025,.016,.025,'#d2bd9f');
+let blanket=new T.Group();blanket.position.set(0,.57,.5);bed.add(blanket);const blanketMat=plush('#e85891');const bg=new T.PlaneGeometry(2.3,1.35,65,44);bg.rotateX(-Math.PI/2);let bp=bg.attributes.position;function fold(x,z){return .07*Math.sin(x*9+z*3)+.04*Math.sin(z*12+x*4)+.11*Math.cos(x*2.1)}for(let i=0;i<bp.count;i++){let x=bp.getX(i),z=bp.getZ(i);bp.setY(i,fold(x,z))}bg.computeVertexNormals();let bm=new T.Mesh(bg,new T.MeshStandardMaterial({color:'#eb659a',roughness:.93,bumpMap:fuzz,bumpScale:.012,side:T.DoubleSide}));bm.receiveShadow=bm.castShadow=true;blanket.add(bm);
+// Chunky hand-knit loops: raised intertwined yarn with deep, readable stitch gaps.
+const knitCurve=new T.CatmullRomCurve3([new T.Vector3(-.062,.01,-.054),new T.Vector3(-.078,.028,-.016),new T.Vector3(-.035,.052,.026),new T.Vector3(0,.058,.054),new T.Vector3(.035,.025,.026),new T.Vector3(.078,.012,-.016),new T.Vector3(.062,.014,-.054)]);
+const yarnGeo=new T.TubeGeometry(knitCurve,32,.029,10,false);
+const curls=new T.InstancedMesh(yarnGeo,blanketMat,12*12),dummy=new T.Object3D();
+for(let row=0;row<12;row++)for(let col=0;col<12;col++){let i=row*12+col,x=(col-5.5)*.188,z=(row-5.5)*.108;dummy.position.set(x,fold(x,z)+.044,z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();curls.setMatrixAt(i,dummy.matrix)}curls.castShadow=curls.receiveShadow=true;blanket.add(curls);
+// Thick bound edges finish the oversized knit without fleece fringe.
+for(let side of [-1,1]){let points=[];for(let i=0;i<=40;i++){let z=-.64+i/40*1.28;points.push([side*1.12,fold(side*1.12,z)+.025,z])}tube(blanket,points,.037,blanketMat)}
+// Animated tuck: the same fleece blanket lifts, slides, and drapes over the torso.
+let tuckProgress=0,lastDrape=-1;
+const curlRest=[];for(let i=0;i<curls.count;i++){let matrix=new T.Matrix4();curls.getMatrixAt(i,matrix);let position=new T.Vector3(),rotation=new T.Quaternion(),scale=new T.Vector3();matrix.decompose(position,rotation,scale);curlRest.push({position,rotation,scale})}
+function dome(x,z){return .83*Math.pow(Math.max(0,1-(x/1.15)**2),.65)*Math.pow(Math.max(0,1-(z/.76)**2),.45)}
+function drapeBlanket(amount){for(let i=0;i<bp.count;i++){let x=bp.getX(i),z=bp.getZ(i);bp.setY(i,fold(x,z)+dome(x,z)*amount)}bp.needsUpdate=true;bg.computeVertexNormals();for(let i=0;i<curls.count;i++){let rest=curlRest[i];dummy.position.copy(rest.position);dummy.position.y+=dome(rest.position.x,rest.position.z)*amount;dummy.quaternion.copy(rest.rotation);dummy.scale.copy(rest.scale);dummy.updateMatrix();curls.setMatrixAt(i,dummy.matrix)}curls.instanceMatrix.needsUpdate=true;lastDrape=amount}
+// Water bowl: ceramic lip, translucent water surface, ripples, refill control.
+const bowl=new T.Group();bowl.position.set(-4.3,COUNTER_Y,-2.7);scene.add(bowl);let profile=[[0,0],[.55,0],[.84,.08],[1,.48],[1,.57],[.9,.58],[.77,.18],[0,.12]].map(p=>new T.Vector2(...p));let ceramic=new T.MeshPhysicalMaterial({color:'#169dab',roughness:.24,clearcoat:1,side:T.DoubleSide});let vessel=new T.Mesh(new T.LatheGeometry(profile,64),ceramic);vessel.castShadow=vessel.receiveShadow=true;bowl.add(vessel);let water=new T.Mesh(new T.CircleGeometry(.82,64),new T.MeshPhysicalMaterial({color:'#6dbed4',roughness:.12,transparent:true,opacity:.68,metalness:.12,clearcoat:1,side:T.DoubleSide}));water.rotation.x=-Math.PI/2;water.position.y=.44;bowl.add(water);let waterLevel=1,ripples=[];for(let i=0;i<3;i++){let ring=new T.Mesh(new T.TorusGeometry(.3,.008,6,60),new T.MeshBasicMaterial({color:'#e8ffff',transparent:true,opacity:.6}));ring.rotation.x=Math.PI/2;ring.visible=false;bowl.add(ring);ripples.push(ring)}
+// Six distinct sculpted baby animals. Front of each animal faces +Z.
+const specs={puppy:{label:'Puppy',name:'Biscuit',coat:'#d88528',patch:'#88431d'},kitty:{label:'Kitty',name:'Mochi',coat:'#6488bc',patch:'#354f80'},chick:{label:'Chick',name:'Sunny',coat:'#ffd21a',patch:'#f39a05'},bear:{label:'Bear cub',name:'Maple',coat:'#965026',patch:'#5c301a'},rabbit:{label:'Baby rabbit',name:'Clover',coat:'#fff9ef',patch:'#ed8ba5'},hamster:{label:'Baby hamster',name:'Peanut',coat:'#dd8b33',patch:'#a95820'}};
+let pet=null,current='puppy',mode='pet',state='idle',petUntil=0,petStroke=0,hearts=[],now=0,drag=null,petting=false;
+function disposeGroup(g){let geometries=new Set(),materials=new Set();g.traverse(m=>{if(m.geometry)geometries.add(m.geometry);if(m.material)(Array.isArray(m.material)?m.material:[m.material]).forEach(x=>materials.add(x))});geometries.forEach(x=>x.dispose());materials.forEach(x=>{if(![white,pink,dark].includes(x))x.dispose()});scene.remove(g)}
+function triangleEar(head,x,y,color){let sh=new T.Shape();sh.moveTo(-.28,0);sh.lineTo(0,.65);sh.lineTo(.28,0);sh.closePath();let m=new T.Mesh(new T.ExtrudeGeometry(sh,{depth:.2,bevelEnabled:true,bevelSize:.06,bevelThickness:.06,bevelSegments:3}),plush(color));m.position.set(x,y,-.1);head.add(m);ball(head,x,y+.22,.16,.12,.22,.035,pink)}
+function makePet(kind){if(pet)disposeGroup(pet.root);current=kind;state='idle';petting=false;drag=null;let s=specs[kind],root=new T.Group();root.position.set(0,.23,.65);scene.add(root);let coat=plush(s.coat),patch=plush(s.patch),cream=plush('#fff0dc');let body=ball(root,0,.65,0,.7,.67,.64,coat),head=new T.Group();head.position.set(0,1.38,.22);root.add(head);ball(head,0,0,0,.76,.68,.64,coat);ball(root,0,.62,.51,.45,.48,.14,kind==='chick'?coat:cream);
+ let feet=[];for(let x of [-.43,.43]){feet.push(ball(root,x,.17,.38,.26,.19,.35,kind==='chick'?'#f3a342':coat));ball(root,x*.9,.74,.27,.18,.34,.23,coat)}
+ if(kind==='puppy'){for(let x of [-.7,.7]){let ear=ball(head,x,-.07,-.03,.23,.53,.21,patch);ear.rotation.z=x>0?-.2:.2}ball(head,-.29,-.2,.53,.3,.24,.2,cream);ball(head,.29,-.2,.53,.3,.24,.2,cream);ball(head,-.31,.2,.48,.25,.28,.1,patch);tube(root,[[0,.55,-.51],[.35,.65,-.84],[.55,1,-.8]],.1,coat)}
+ if(kind==='kitty'){triangleEar(head,-.48,.43,s.coat);triangleEar(head,.48,.43,s.coat);tube(root,[[.5,.4,-.3],[1,.48,-.6],[1.12,.95,-.35],[.97,1.2,-.2]],.12,coat);for(let x of [-.23,0,.23]){let stripe=ball(head,x,.46,.41,.045,.17,.04,patch);stripe.rotation.z=x*1.2}for(let sign of [-1,1])for(let i=0;i<3;i++)tube(head,[[sign*.35,-.19,.59],[sign*.65,-.17+i*.06,.65],[sign*.94,-.24+i*.1,.65]],.009,'#777a80')}
+ if(kind==='rabbit'){for(let x of [-.37,.37]){let ear=ball(head,x,.83,-.08,.23,.79,.18,coat);ear.rotation.z=x>0?-.12:.12;let inner=ball(head,x,.85,.075,.12,.56,.035,pink);inner.rotation.z=x>0?-.12:.12}ball(root,0,.45,-.66,.25,.25,.25,cream)}
+ if(kind==='bear'||kind==='hamster'){for(let x of [-.58,.58]){ball(head,x,.5,-.08,kind==='bear'?.29:.23,.28,.17,coat);ball(head,x,.51,.07,.16,.17,.035,kind==='bear'?patch:pink)}ball(head,0,-.21,.51,.4,.29,.2,cream);if(kind==='hamster'){ball(head,-.5,-.22,.39,.3,.29,.28,cream);ball(head,.5,-.22,.39,.3,.29,.28,cream);root.scale.setScalar(.88)}}
+ if(kind==='chick'){for(let x of [-.65,.65]){let wing=ball(root,x,.77,0,.2,.37,.43,patch);wing.rotation.z=x*.5}for(let i=0;i<3;i++){let tuft=ball(head,(i-1)*.11,.65,-.08,.09,.23,.085,coat);tuft.rotation.z=(i-1)*-.35}let beak=new T.Mesh(new T.ConeGeometry(.16,.3,4),material('#ef9a2e'));beak.rotation.x=Math.PI/2;beak.position.set(0,-.18,.74);head.add(beak)}
+ let eyes=[];for(let x of [-.28,.28]){eyes.push(ball(head,x,.04,.57,.087,.112,.068,dark));ball(head,x-.025,.075,.625,.022,.028,.012,white);ball(head,x*1.65,-.18,.53,.11,.065,.025,pink)}if(kind!=='chick'){ball(head,0,-.16,.735,.09,.065,.055,kind==='puppy'||kind==='bear'?dark:pink);tube(head,[[-.13,-.29,.68],[0,-.34,.7],[.13,-.29,.68]],.012,'#76584b')}
+ // Tiny tufts on the crown imply soft fur rather than a plastic surface.
+ for(let i=0;i<34;i++){let a=rand()*Math.PI*2,r=rand()*.5;let tuft=ball(head,Math.cos(a)*r,.57-r*.16,Math.sin(a)*r*.7,.025,.07+rand()*.04,.025,coat);tuft.rotation.z=(rand()-.5)*.6}
+ pet={root,body,head,eyes,feet,kind,blink:2+rand()*3};$('petname').textContent=s.name;$('status').textContent='Meet '+s.name+'. A little affection goes a long way.';document.querySelectorAll('[data-pet]').forEach(b=>{b.classList.toggle('active',b.dataset.pet===kind);b.setAttribute('aria-pressed',String(b.dataset.pet===kind))});updateState('idle')}
+function updateState(v){state=v;$('state').textContent={idle:'Feeling cozy',petting:'Loves your attention',drinking:'Little sips of water',sleeping:'Sweet dreams'}[v]||v}
+// Four-finger white cartoon glove: rounded palm, three fingertips and one thumb.
+let glove=new T.Group();scene.add(glove);let gloveMat=new T.MeshPhysicalMaterial({color:'#fffdf7',roughness:.42,clearcoat:.16});ball(glove,0,0,0,.31,.14,.34,gloveMat);for(let i=0;i<3;i++)ball(glove,(i-1)*.2,.015,-.34,.105,.12,.23,gloveMat);let thumb=ball(glove,-.35,.01,-.04,.15,.12,.24,gloveMat);thumb.rotation.y=-.7;let cuff=new T.Mesh(new T.TorusGeometry(.17,.055,12,32),gloveMat);cuff.rotation.x=Math.PI/2;cuff.position.z=.35;glove.add(cuff);for(let x of [-.1,0,.1])tube(glove,[[x,.137,-.06],[x,.145,.04],[x,.13,.15]],.008,'#d0cbc3');glove.visible=false;
+function heart(){let sh=new T.Shape();sh.moveTo(0,.04);sh.bezierCurveTo(-.23,.23,-.37,-.08,0,-.31);sh.bezierCurveTo(.37,-.08,.23,.23,0,.04);let m=new T.Mesh(new T.ShapeGeometry(sh),new T.MeshBasicMaterial({color:['#ed9cae','#e8b76e','#b7b695'][Math.floor(rand()*3)],transparent:true,side:T.DoubleSide}));m.position.copy(pet.root.position).add(new T.Vector3((rand()-.5)*1.4,2.2,(rand()-.5)*.5));scene.add(m);hearts.push({m,life:1,speed:.015+rand()*.008})}
+const ray=new T.Raycaster(),pointer=new T.Vector2(),floor=new T.Plane(new T.Vector3(0,1,0),-.1);function project(e){pointer.set(e.clientX/innerWidth*2-1,-e.clientY/innerHeight*2+1);ray.setFromCamera(pointer,camera);let p=new T.Vector3();return ray.ray.intersectPlane(floor,p)?p:null}function touchesPet(e){project(e);return ray.intersectObjects(pet.root.children,true).length>0}let gloveTarget=new T.Vector3(),lastMouse=null;
+function headHit(e){project(e);scene.updateMatrixWorld(true);return ray.intersectObjects(pet.head.children,true)[0]||null}
+function moveGlove(hit){gloveTarget.copy(hit.point);gloveTarget.y+=.16;glove.position.copy(gloveTarget);glove.rotation.set(-.12,pet.root.rotation.y,.08);glove.visible=true}
+function doPet(hit,stroke=false){if(!hit)return;if(state==='sleeping'){pet.root.rotation.set(0,0,0);pet.root.position.set(0,.23,.65);pet.root.scale.setScalar(current==='hamster'?.88:1)}updateState('petting');petUntil=now+(stroke?.3:.4);petStroke=now;moveGlove(hit);if(now-lastHeart>.18){heart();lastHeart=now}$('status').textContent=specs[current].name+(stroke?' enjoys your gentle stroke.':' enjoys a gentle head pat.')}
+function destination(p){if(Math.hypot(p.x-bed.position.x,p.z-bed.position.z)<1.65){pet.root.position.set(bed.position.x,.54,bed.position.z+.65);pet.root.rotation.set(-Math.PI/2,0,0);updateState('sleeping');$('status').textContent='Tucked in beneath the chunky knitted blanket. Shhh…'}else if(Math.hypot(p.x-bowl.position.x,p.z-bowl.position.z)<1.7){if(waterLevel<=.03){$('status').textContent='The bowl is empty. Tap Refill water.';updateState('idle');return}pet.root.position.set(-4.3,COUNTER_Y+.09,-1.38);pet.root.rotation.y=Math.PI;updateState('drinking');$('status').textContent=specs[current].name+' is drinking. Watch the water slowly go down.'}else updateState('idle')}
+canvas.onpointerdown=e=>{if(!pet)return;canvas.setPointerCapture(e.pointerId);let p=project(e);if(!p)return;let isPet=touchesPet(e);controls.enabled=!isPet;drag={kind:isPet?(mode==='carry'?'carry':'pet'):'orbit',x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,start:pet.root.position.clone(),anchor:p.clone(),moved:false};if(drag.kind==='pet')doPet(headHit(e));if(drag.kind==='carry'){glove.visible=false;updateState('idle');pet.root.rotation.set(0,0,0);$('status').textContent='Drag gently to the bed or water, then release.'}};
+canvas.onpointermove=e=>{let hit=mode==='pet'&&pet?headHit(e):null;let movement=lastMouse?Math.hypot(e.clientX-lastMouse.x,e.clientY-lastMouse.y):0;lastMouse={x:e.clientX,y:e.clientY};
+if(mode==='pet'&&(!drag||drag.kind==='pet')){if(hit){moveGlove(hit);if(movement>1.5&&now-petStroke>.075)doPet(hit,true)}else if(state!=='petting')glove.visible=false}
+if(!drag)return;let p=project(e);drag.moved ||=Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>5;
+if(drag.kind==='carry'&&p){pet.root.position.set(Math.max(-5.5,Math.min(5.5,drag.start.x+p.x-drag.anchor.x)),.7,Math.max(-4.5,Math.min(3,drag.start.z+p.z-drag.anchor.z)))}drag.x=e.clientX;drag.y=e.clientY};
+canvas.onpointerup=()=>{controls.enabled=true;if(drag?.kind==='carry'){pet.root.position.y=.23;destination(pet.root.position)}drag=null};canvas.onpointercancel=()=>{controls.enabled=true;if(drag?.kind==='carry')pet.root.position.y=.23;drag=null;glove.visible=false};canvas.onpointerleave=()=>{lastMouse=null;if(!drag)glove.visible=false};
+function setMode(v){mode=v;glove.visible=false;['pet','carry'].forEach(id=>{$(id).classList.toggle('active',id===v);$(id).setAttribute('aria-pressed',String(id===v))});$('help').textContent=v==='pet'?'Click the head to pat · Move across the head to stroke · Drag empty space to orbit':'Drag the animal to the bed or water bowl, then release · Drag empty space to orbit';canvas.style.cursor=v==='carry'?'grab':'pointer'}$('pet').onclick=()=>setMode('pet');$('carry').onclick=()=>setMode('carry');$('refill').onclick=()=>{waterLevel=1;$('status').textContent='Fresh water, filled to the brim.'};$('home').onclick=()=>makePet(current);$('view').onclick=()=>{camera.position.set(0,3.6,5.6);controls.target.set(0,.25,0);controls.update()};document.querySelectorAll('[data-pet]').forEach(b=>b.onclick=()=>makePet(b.dataset.pet));addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+// Accessible button alternatives also work without dragging or precise pointing.
+let clock=new T.Clock(),lastHeart=0;makePet('puppy');function animate(){requestAnimationFrame(animate);let dt=Math.min(clock.getDelta(),.05);now+=dt;if(pet){let sleeping=state==='sleeping',drinking=state==='drinking',happy=state==='petting';if(happy&&now>petUntil){updateState('idle');glove.visible=false}pet.body.scale.y=.67*(1+Math.sin(now*(sleeping?1.6:2.5))*.025);pet.head.rotation.x=drinking?.49+Math.sin(now*13)*.035:happy?-.1+Math.sin(now*5)*.04:sleeping?.22:Math.sin(now*1.4)*.02;pet.head.rotation.z=happy?Math.sin(now*4)*.09:sleeping?-.25:Math.sin(now*1.1)*.015;
+ if(sleeping){pet.root.rotation.set(-Math.PI/2,0,0);let bs=current==='hamster'?.88:1;pet.root.scale.set(bs,bs*.86,bs)}else{pet.root.rotation.x=0;let bs=current==='hamster'?.88:1;pet.root.scale.setScalar(bs)}let blink=Math.sin(now*1.15)> .992;pet.eyes.forEach(e=>e.scale.y=sleeping?.015:happy?.045:blink?.012:.112);
+ if(drinking){waterLevel=Math.max(0,waterLevel-dt*.042);ripples.forEach((r,i)=>{let phase=(now*1.1+i/3)%1;r.visible=true;r.position.y=.17+waterLevel*.27+.008;r.scale.setScalar(.3+phase*2);r.material.opacity=(1-phase)*.45});if(waterLevel<=0){updateState('idle');$('status').textContent='All done! Refill the bowl for another little drink.'}}else ripples.forEach(r=>r.visible=false);
+ if(happy&&glove.visible){glove.position.copy(gloveTarget);let remaining=petUntil-now;glove.position.y-=Math.max(0,Math.sin(Math.min(1,remaining/.4)*Math.PI))*.055}}
+ let tuckTarget=state==='sleeping'?1:0;tuckProgress+=(tuckTarget-tuckProgress)*Math.min(1,dt*3.8);if(Math.abs(tuckProgress-tuckTarget)<.001)tuckProgress=tuckTarget;blanket.position.z=.5-.4*tuckProgress;blanket.position.y=.57+(state==='sleeping'?Math.sin(now*1.6)*.008:0);if(Math.abs(tuckProgress-lastDrape)>.001)drapeBlanket(tuckProgress);
+ water.position.y=.17+waterLevel*.27;water.scale.setScalar(.81+waterLevel*.19);$('waterLabel').textContent=Math.round(waterLevel*100)+'%';$('waterbar').style.width=waterLevel*100+'%';for(let i=hearts.length-1;i>=0;i--){let h=hearts[i];h.life-=dt*.53;h.m.position.y+=h.speed*dt*60;h.m.quaternion.copy(camera.quaternion);h.m.material.opacity=Math.max(0,h.life);if(h.life<=0){scene.remove(h.m);h.m.geometry.dispose();h.m.material.dispose();hearts.splice(i,1)}}controls.update();renderer.render(scene,camera)}animate();
+
+</script></body></html>
